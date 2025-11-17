@@ -53,32 +53,21 @@ app.post("/generate-script", async (req, res) => {
 
     /* ----- SUPER PROMPT (JSON ONLY) ----- */
     const finalPrompt = `
-You are a viral short-form content generator for TikTok, YouTube Shorts, and Reels.
+Return ONLY valid JSON. No backticks. No markdown. No explanations.
 
-Generate the following in **JSON format ONLY**:
+{
+  "script": "string",
+  "title": "string",
+  "hashtags": "string"
+}
 
-1. "script" → The main script.
-   - No emojis
-   - Each sentence on its own line
-   - Very punchy and engaging
-   - Based on the niche, tone, format, and length
+Fill in the values based on this:
 
-2. "title" → A viral 30–50 character title.
-   - No emojis
-   - Super clickable
-
-3. "hashtags" → 6–10 hashtags separated by spaces.
-   - No emojis
-   - Relevant to the script & niche
-
-CONTENT DETAILS:
 Niche: ${niche}
 Tone: ${tone}
 Format: ${format}
 Length: ${lengthPrompt}
 Format Instructions: ${formatPrompt}
-
-Return ONLY valid JSON. No explanations.
 `;
 
     /* ----- OPENAI REQUEST ----- */
@@ -86,16 +75,27 @@ Return ONLY valid JSON. No explanations.
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: finalPrompt }],
       temperature: 0.85,
-      max_tokens: 500,
+      max_tokens: 600,
     });
 
-    /* ----- PARSE JSON SAFELY ----- */
+    /* -------- SAFE JSON PARSING -------- */
+    let raw = response.choices[0].message.content;
+
+    // REMOVE CODE FENCES
+    raw = raw.replace(/```json/gi, "");
+    raw = raw.replace(/```/g, "");
+    raw = raw.trim();
+
     let json;
     try {
-      json = JSON.parse(response.choices[0].message.content);
+      json = JSON.parse(raw);
     } catch (err) {
-      console.error("JSON Parse Error:", err);
-      return res.status(500).json({ error: "Invalid AI JSON response" });
+      console.error("SAFE JSON PARSE ERROR:", err);
+      console.error("RAW OUTPUT:", raw);
+      return res.status(500).json({
+        error: "Invalid AI JSON response",
+        raw,
+      });
     }
 
     res.json({
