@@ -2,6 +2,10 @@ import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import ffmpeg from "fluent-ffmpeg";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -10,14 +14,30 @@ app.use(express.json());
 app.use(cors());
 
 /* -----------------------------------------
+   FFmpeg (Render uses system ffmpeg)
+----------------------------------------- */
+ffmpeg.setFfmpegPath("/usr/bin/ffmpeg");
+
+/* -----------------------------------------
+   FILE PATHS
+----------------------------------------- */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const VIDEOS_DIR = path.join(__dirname, "videos");
+if (!fs.existsSync(VIDEOS_DIR)) fs.mkdirSync(VIDEOS_DIR);
+
+const BG_DIR = path.join(__dirname, "assets", "backgrounds");
+
+/* -----------------------------------------
    TEST ROUTE
 ----------------------------------------- */
 app.get("/", (req, res) => {
-  res.json({ message: "Faceless Factory API running (No-FFmpeg Mode) 🚀" });
+  res.json({ message: "Faceless Factory API running (FFmpeg Mode) 🎥🔥" });
 });
 
 /* -----------------------------------------
-   GENERATE SCRIPT ROUTE
+   SCRIPT GENERATION
 ----------------------------------------- */
 app.post("/generate-script", async (req, res) => {
   const { niche, tone, format, length } = req.body;
@@ -27,46 +47,40 @@ app.post("/generate-script", async (req, res) => {
 
     const formats = {
       hook: "Write a viral TikTok hook. 1–2 punchy lines.",
-      story: "Write a cinematic short story narration with a beginning and climax.",
-      motivational: "Write a hype motivational speech with emotional pacing.",
+      story: "Write a cinematic short story narration.",
+      motivational: "Write a hype motivational speech.",
       hype: "Write an aggressive high-energy script.",
       soft: "Write a soft-spoken comforting narration.",
       facts: "Write a list of rapid-fire facts.",
       listicle: "Write a 5-item list (#1–#5).",
       top3: "Write a Top 3 countdown.",
-      anime: "Write in anime narrator style. Dramatic, spiritual, epic.",
+      anime: "Write in anime narrator style.",
     };
 
     const lengths = {
-      short: "6–10 seconds, 1–3 lines.",
-      medium: "12–18 seconds, 3–6 lines.",
-      long: "20–28 seconds, 6–10 lines.",
+      short: "6–10 seconds",
+      medium: "12–18 seconds",
+      long: "20–28 seconds",
     };
 
-    const formatPrompt = formats[format] || "";
-    const lengthPrompt = lengths[length] || "15–20 seconds.";
-
     const finalPrompt = `
-Return ONLY valid JSON. No backticks. No markdown. No explanations.
-
+Return ONLY JSON:
 {
-  "script": "string",
-  "title": "string",
-  "hashtags": "string"
+ "script": "",
+ "title": "",
+ "hashtags": ""
 }
 
 Niche: ${niche}
 Tone: ${tone}
-Format: ${format}
-Length: ${lengthPrompt}
-Format Instructions: ${formatPrompt}
+Format Instructions: ${formats[format]}
+Length: ${lengths[length]}
 `;
 
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: finalPrompt }],
       temperature: 0.85,
-      max_tokens: 600,
     });
 
     let raw = response.choices[0].message.content
@@ -74,31 +88,17 @@ Format Instructions: ${formatPrompt}
       .replace(/```/g, "")
       .trim();
 
-    let json;
-    try {
-      json = JSON.parse(raw);
-    } catch (err) {
-      console.error("RAW JSON ERROR:", raw);
-      return res.status(500).json({
-        error: "AI returned invalid JSON",
-        raw,
-      });
-    }
+    const json = JSON.parse(raw);
 
-    res.json({
-      script: json.script || "",
-      title: json.title || "",
-      hashtags: json.hashtags || "",
-    });
-
-  } catch (error) {
-    console.error("Script Error:", error);
+    res.json(json);
+  } catch (err) {
+    console.error("Script Error:", err);
     res.status(500).json({ error: "Failed to generate script" });
   }
 });
 
 /* -----------------------------------------
-   GENERATE VIDEO (OPENAI BUILT-IN VIDEO)
+   VIDEO GENERATION (FFmpeg Render)
 ----------------------------------------- */
 app.post("/generate-video", async (req, res) => {
   try {
@@ -110,18 +110,41 @@ app.post("/generate-video", async (req, res) => {
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const result = await client.videos.generate({
-      model: "gpt-4.1-video",
-      prompt: script,
-      size: "1080x1920",
-      duration: "short",
-      format: "mp4",
+    // 1) Generate Voice
+    const speech = await client.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy",
+      input: script,
     });
 
-    const buffer = Buffer.from(result.video, "base64");
+    const audioPath = path.join(VIDEOS_DIR, `speech_${Date.now()}.mp3`);
+    fs.writeFileSync(audioPath, Buffer.from(await speech.arrayBuffer()));
 
-    res.setHeader("Content-Type", "video/mp4");
-    res.send(buffer);
+    // 2) Background
+    const bgPath = path.join(BG_DIR, "gradient.png");
+
+    // 3) Output file
+    const videoPath = path.join(VIDEOS_DIR, `video_${Date.now()}.mp4`);
+
+    // 4) FFmpeg Render
+    ffmpeg()
+      .addInput(bgPath)
+      .loop(10)
+      .addInput(audioPath)
+      .outputOptions([
+        "-map 0:v",
+        "-map 1:a",
+        "-shortest"
+      ])
+      .save(videoPath)
+      .on("end", () => {
+        console.log("Video rendered:", videoPath);
+        res.sendFile(videoPath);
+      })
+      .on("error", (err) => {
+        console.error("FFmpeg ERROR:", err);
+        res.status(500).json({ error: "FFmpeg processing failed" });
+      });
 
   } catch (err) {
     console.error("Video Error:", err);
@@ -133,5 +156,5 @@ app.post("/generate-video", async (req, res) => {
    START SERVER
 ----------------------------------------- */
 app.listen(5000, () =>
-  console.log("Backend running on port 5000 🚀 (No-FFmpeg Mode)")
+  console.log("Backend running on port 5000 🚀 (FFmpeg Mode)")
 );
