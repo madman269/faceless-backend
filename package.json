@@ -1,25 +1,17 @@
 {
-  "name": "backend",
+  "name": "faceless-backend",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "axios": "^1.13.2",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-<<<<<<< HEAD
-    "ffmpeg-static": "^5.3.0",
-=======
->>>>>>> e71c4c9c67e9f1ccdf34006b4f768d535a723b60
-    "openai": "^6.9.0"
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "fluent-ffmpeg": "^2.1.2",
+    "openai": "^4.23.0"
   }
 }
